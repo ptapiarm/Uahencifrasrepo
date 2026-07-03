@@ -2457,7 +2457,7 @@ with main_mat:
         # SUB-TAB 4: RETENCIÓN 1ER AÑO
         # ══════════════════════════════════════════════════════════════════
         with tab_m4:
-            if not uploaded:
+            if not file_bytes:
                 st.warning("⚠️  Para calcular retención también debes cargar el archivo de **Admisión** (pestaña 🎓 Admisión).")
             else:
                 try:
@@ -2552,7 +2552,7 @@ with main_mat:
         # SUB-TAB 5: SEGUIMIENTO POR CARRERA Y COHORTE
         # ══════════════════════════════════════════════════════════════════
         with tab_m5:
-            if not uploaded:
+            if not file_bytes:
                 st.warning("⚠️  Para el seguimiento de cohortes también debes cargar el archivo de **Admisión** (pestaña 🎓 Admisión).")
             else:
                 try:
