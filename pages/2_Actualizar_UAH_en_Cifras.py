@@ -3,6 +3,8 @@ uah_admision.py  —  UAH en Cifras
 """
 
 import io, base64
+from pathlib import Path
+from cryptography.fernet import Fernet, InvalidToken
 import pandas as pd
 import streamlit as st
 from openpyxl.styles import (PatternFill, Font, Alignment, Border, Side)
@@ -229,6 +231,115 @@ table.t2 tbody tr.tr-tot td.c-tot  { background:var(--azul) !important;
 .dl-btn:hover { background: var(--azul-medio); color: white !important; }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CARGA DE ARCHIVO INSTITUCIONAL CIFRADO (data/*.enc)
+# ──────────────────────────────────────────────────────────────────────────────
+# Los archivos .enc dentro de la carpeta data/ son versiones cifradas de los
+# Excel institucionales (generadas con cifrar_excels.py). No son legibles sin
+# la clave, así que es seguro tenerlos en un repositorio de GitHub aunque sea
+# público. La clave SOLO vive en .streamlit/secrets.toml (nunca en el repo):
+#
+# [encryption]
+# key = "el-contenido-de-clave.key"
+
+
+def _buscar_archivo_enc(nombre_archivo: str):
+    """
+    Busca nombre_archivo dentro de una carpeta 'data' en varios lugares
+    posibles, porque en una app multipágina este script vive en pages/,
+    no en la raíz del repo:
+      - pages/data/archivo.enc      (al lado del propio script)
+      - data/archivo.enc            (un nivel arriba, raíz del repo)
+      - <cwd>/data/archivo.enc      (directorio de trabajo de Streamlit)
+    Devuelve el primer Path que exista, o None si no lo encuentra en ninguno.
+    """
+    aqui = Path(__file__).resolve().parent
+    candidatos = [
+        aqui / "data" / nombre_archivo,
+        aqui.parent / "data" / nombre_archivo,
+        Path.cwd() / "data" / nombre_archivo,
+    ]
+    for c in candidatos:
+        if c.exists():
+            return c
+    return None
+
+
+@st.cache_data(show_spinner=False)
+def _descifrar_archivo(ruta_enc: str) -> bytes:
+    p = Path(ruta_enc)
+    if not p.exists():
+        raise FileNotFoundError(f"No existe el archivo cifrado: {p}")
+    try:
+        clave = st.secrets["encryption"]["key"]
+    except (KeyError, FileNotFoundError):
+        raise RuntimeError(
+            "Falta configurar [encryption] key en .streamlit/secrets.toml."
+        )
+    try:
+        return Fernet(clave.encode() if isinstance(clave, str) else clave).decrypt(p.read_bytes())
+    except InvalidToken:
+        raise RuntimeError("La clave configurada no corresponde a este archivo cifrado.")
+
+
+def selector_origen_archivo(nombre: str, ejemplo: str, key_prefix: str, archivo_enc: str = None):
+    """
+    Muestra el panel para cargar el archivo Excel de {nombre}: ya sea subiéndolo
+    manualmente, o (si existe data/{archivo_enc}) descifrando la versión
+    institucional incluida en la app. Devuelve (file_bytes, hoja_sel).
+    """
+    st.markdown(
+        f'<div class="upload-panel"><h4>📂 Archivo de {nombre}</h4>'
+        f'<p style="font-size:.8rem;color:#6B7A8D;margin:-6px 0 10px 0">📎 Ejemplo: <code>{ejemplo}</code></p>',
+        unsafe_allow_html=True,
+    )
+
+    ruta_enc = _buscar_archivo_enc(archivo_enc) if archivo_enc else None
+    hay_institucional = ruta_enc is not None
+
+    if hay_institucional:
+        origen = st.radio(
+            "¿Cómo quieres cargar el archivo?",
+            ["🔒  Usar archivo institucional (incluido en la app)", "💻  Subir desde mi computador"],
+            horizontal=True, key=f"{key_prefix}_origen",
+        )
+    else:
+        origen = "💻  Subir desde mi computador"
+
+    col_up, col_sh = st.columns([3, 2])
+    file_bytes = None
+    with col_up:
+        if origen.startswith("🔒"):
+            try:
+                file_bytes = _descifrar_archivo(str(ruta_enc))
+                st.success("Archivo institucional cargado ✅")
+            except Exception as e:
+                st.error(f"No se pudo cargar el archivo institucional.\n\n`{e}`")
+        else:
+            uploaded = st.file_uploader(
+                f"Sube el Excel de {nombre}", type=["xlsx"],
+                label_visibility="visible", key=f"{key_prefix}_uploader",
+            )
+            if uploaded:
+                file_bytes = uploaded.read()
+
+    with col_sh:
+        if file_bytes:
+            hojas = get_sheet_names(file_bytes)
+            hoja_sel = st.selectbox(
+                "Seleccionar hoja de trabajo", hojas,
+                index=len(hojas) - 1, key=f"{key_prefix}_hoja",
+            )
+        else:
+            hoja_sel = None
+            st.selectbox(
+                "Seleccionar hoja de trabajo",
+                ["— sube un archivo primero —"], disabled=True, key=f"{key_prefix}_hoja_dis",
+            )
+    st.markdown('</div>', unsafe_allow_html=True)
+    return file_bytes, hoja_sel
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1708,23 +1819,14 @@ main_adm, main_mat, main_oferta = st.tabs([
 # ══════════════════════════════════════════════════════════════════════════════
 with main_adm:
 
-    st.markdown('<div class="upload-panel"><h4>📂 Archivo de Admisión</h4><p style="font-size:.8rem;color:#6B7A8D;margin:-6px 0 10px 0">📎 Ejemplo: <code>1. ADM PREG 2011 2026 30 DE ABRIL.xlsx</code></p>', unsafe_allow_html=True)
-    col_up, col_sh = st.columns([3, 2])
-    with col_up:
-        uploaded = st.file_uploader("Sube el Excel ADM PREG", type=["xlsx"],
-                                    label_visibility="visible", key="up_adm")
-    with col_sh:
-        if uploaded:
-            file_bytes = uploaded.read()
-            hojas      = get_sheet_names(file_bytes)
-            hoja_sel   = st.selectbox("Seleccionar hoja de trabajo", hojas,
-                                      index=len(hojas) - 1, key="sh_adm")
-        else:
-            st.selectbox("Seleccionar hoja de trabajo",
-                         ["— sube un archivo primero —"], disabled=True, key="sh_adm_dis")
-    st.markdown('</div>', unsafe_allow_html=True)
+    file_bytes, hoja_sel = selector_origen_archivo(
+        nombre="Admisión",
+        ejemplo="1. ADM PREG 2011 2026 30 DE ABRIL.xlsx",
+        key_prefix="adm",
+        archivo_enc="admision.enc",
+    )
 
-    if not uploaded:
+    if not file_bytes:
         st.info("⬆️  Sube un archivo Excel para comenzar.")
     else:
         st.markdown(f'<div class="sheet-badge">🗂 &nbsp;Hoja activa: <strong>{hoja_sel}</strong></div>',
@@ -2088,23 +2190,14 @@ with main_adm:
 # ══════════════════════════════════════════════════════════════════════════════
 with main_mat:
 
-    st.markdown('<div class="upload-panel"><h4>📂 Archivo de Matrícula</h4><p style="font-size:.8rem;color:#6B7A8D;margin:-6px 0 10px 0">📎 Ejemplo: <code>01. MATRÍCULA TOTAL ACUMULADA 2016-2025.xlsx</code></p>', unsafe_allow_html=True)
-    col_up_m, col_sh_m = st.columns([3, 2])
-    with col_up_m:
-        uploaded_mat = st.file_uploader("Sube el Excel de Matrícula Completa", type=["xlsx"],
-                                        label_visibility="visible", key="up_mat")
-    with col_sh_m:
-        if uploaded_mat:
-            file_bytes_mat = uploaded_mat.read()
-            hojas_mat      = get_sheet_names(file_bytes_mat)
-            hoja_sel_mat   = st.selectbox("Seleccionar hoja de trabajo", hojas_mat,
-                                          index=len(hojas_mat) - 1, key="sh_mat")
-        else:
-            st.selectbox("Seleccionar hoja de trabajo",
-                         ["— sube un archivo primero —"], disabled=True, key="sh_mat_dis")
-    st.markdown('</div>', unsafe_allow_html=True)
+    file_bytes_mat, hoja_sel_mat = selector_origen_archivo(
+        nombre="Matrícula Completa",
+        ejemplo="01. MATRÍCULA TOTAL ACUMULADA 2016-2026.xlsx",
+        key_prefix="mat",
+        archivo_enc="matricula.enc",
+    )
 
-    if not uploaded_mat:
+    if not file_bytes_mat:
         st.info("⬆️  Sube un archivo Excel de Matrícula para comenzar.")
     else:
         st.markdown(f'<div class="sheet-badge">🗂 &nbsp;Hoja activa: <strong>{hoja_sel_mat}</strong></div>',
@@ -2364,7 +2457,7 @@ with main_mat:
         # SUB-TAB 4: RETENCIÓN 1ER AÑO
         # ══════════════════════════════════════════════════════════════════
         with tab_m4:
-            if not uploaded:
+            if not file_bytes:
                 st.warning("⚠️  Para calcular retención también debes cargar el archivo de **Admisión** (pestaña 🎓 Admisión).")
             else:
                 try:
@@ -2459,7 +2552,7 @@ with main_mat:
         # SUB-TAB 5: SEGUIMIENTO POR CARRERA Y COHORTE
         # ══════════════════════════════════════════════════════════════════
         with tab_m5:
-            if not uploaded:
+            if not file_bytes:
                 st.warning("⚠️  Para el seguimiento de cohortes también debes cargar el archivo de **Admisión** (pestaña 🎓 Admisión).")
             else:
                 try:
