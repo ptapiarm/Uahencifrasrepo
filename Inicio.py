@@ -32,10 +32,8 @@ st.title("Procesos Varios")
 st.markdown(
     "En esta aplicación se pueden realizar las siguientes funciones:\n\n"
     "- Generar tablas para actualizar UAH en cifras.\n"
-    "- Consultar un RUT a UCampus.\n"
-    "- Generar Avance curricular.\n"
-    "- Extraer titulados.\n"
-    "- Extraer Matrícula Unificada."
+    "- Otras en construcción" 
+
 )
 
 st.markdown("---")
