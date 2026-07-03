@@ -244,7 +244,27 @@ table.t2 tbody tr.tr-tot td.c-tot  { background:var(--azul) !important;
 # [encryption]
 # key = "el-contenido-de-clave.key"
 
-DATA_DIR = Path(__file__).parent / "data"
+
+def _buscar_archivo_enc(nombre_archivo: str):
+    """
+    Busca nombre_archivo dentro de una carpeta 'data' en varios lugares
+    posibles, porque en una app multipágina este script vive en pages/,
+    no en la raíz del repo:
+      - pages/data/archivo.enc      (al lado del propio script)
+      - data/archivo.enc            (un nivel arriba, raíz del repo)
+      - <cwd>/data/archivo.enc      (directorio de trabajo de Streamlit)
+    Devuelve el primer Path que exista, o None si no lo encuentra en ninguno.
+    """
+    aqui = Path(__file__).resolve().parent
+    candidatos = [
+        aqui / "data" / nombre_archivo,
+        aqui.parent / "data" / nombre_archivo,
+        Path.cwd() / "data" / nombre_archivo,
+    ]
+    for c in candidatos:
+        if c.exists():
+            return c
+    return None
 
 
 @st.cache_data(show_spinner=False)
@@ -276,8 +296,8 @@ def selector_origen_archivo(nombre: str, ejemplo: str, key_prefix: str, archivo_
         unsafe_allow_html=True,
     )
 
-    ruta_enc = (DATA_DIR / archivo_enc) if archivo_enc else None
-    hay_institucional = ruta_enc is not None and ruta_enc.exists()
+    ruta_enc = _buscar_archivo_enc(archivo_enc) if archivo_enc else None
+    hay_institucional = ruta_enc is not None
 
     if hay_institucional:
         origen = st.radio(
