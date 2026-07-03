@@ -2470,6 +2470,11 @@ with main_mat:
                     st.error(f"No se pudo procesar.\n\n`{e}`"); st.stop()
 
                 cohortes_all = sorted(df_ret["AÑO COHORTE"].unique())
+                # La última cohorte todavía no puede tener retención medible
+                # (necesita que haya pasado al menos 1 año desde el ingreso),
+                # así que se excluye de esta tabla.
+                if len(cohortes_all) > 1:
+                    cohortes_all = cohortes_all[:-1]
                 yr_ret    = cohortes_all[-1]
                 ret_yr    = df_ret[df_ret["AÑO COHORTE"] == yr_ret]
                 ret_uah   = (ret_yr["N_RETENIDOS"].sum() / ret_yr["N_COHORTE"].sum() * 100
